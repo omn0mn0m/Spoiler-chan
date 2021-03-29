@@ -1,23 +1,37 @@
 import discord
 import os
 
+from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-client = discord.Client()
+bot = commands.Bot(command_prefix='!')
 
-@client.event
+spoiler_list = [
+    'featherine',
+    'bernkastel',
+]
+
+@bot.event
 async def on_ready():
-    print('We have logged in as {0.user}'.format(client))
+    print('We have logged in as {0.user}'.format(bot))
 
-@client.event
+@bot.event
 async def on_message(message):
-    if message.author == client.user:
+    if message.author == bot.user:
         return
 
-    if message.content.startswith('$hello'):
-        await message.channel.send('Hello!')
+    if any(spoiler_word in message.content.lower() for spoiler_word in spoiler_list):
+        await message.channel.send('Looks like a spoiler...')
+        return
 
-client.run(DISCORD_TOKEN)
+    await bot.process_commands(message)
+
+@bot.command()
+async def spoiler(context, arg):
+    await context.message.delete()
+    await context.send("||{}||".format(arg))
+    
+bot.run(DISCORD_TOKEN)
