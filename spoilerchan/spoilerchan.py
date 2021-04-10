@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "postgres")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "db")
 
 bot = commands.Bot(command_prefix='s!')
 
@@ -23,10 +27,10 @@ async def on_message(message):
     if message.author == bot.user or message.author.bot:
         return
 
-    warning = "Looks like a possible spoiler, {}. Please tag it if it is, or the <@&{}> will issue a warning.\n\nTag example: `[Higu Full]||Higurashi spoiler||`\n\nMessage Link: {}"
+    warning = "Looks like a possible {series} spoiler, {user}. Please tag it if it is, or the <@&{mod_role}> will issue a warning.\n\nTag example: `[{series} Full]||{series} spoiler||`\n\nMessage Link: {jump_link}"
     
     async with bot.pool.acquire() as connection:
-        spoiler_list = await connection.fetch('SELECT phrase, exceptions, spoiler_channels FROM spoilers WHERE guild_id=$1', message.guild.id)
+        spoiler_list = await connection.fetch('SELECT phrase, exceptions, spoiler_channels, series FROM spoilers WHERE guild_id=$1', message.guild.id)
 
         mod_role = await connection.fetchrow('SELECT mod_role FROM guilds WHERE id=$1', message.guild.id)
 
@@ -43,9 +47,10 @@ async def on_message(message):
                 if any(exception in message_text for exception in spoiler['exceptions']):
                     return
                 
-            await message.channel.send(warning.format(message.author.mention,
-                                                      mod_role,
-                                                      message.jump_url))
+            await message.channel.send(warning.format(user = message.author.mention,
+                                                      mod_role = mod_role,
+                                                      jump_link = message.jump_url,
+                                                      series = spoiler['series']))
 
 @bot.event
 async def on_guild_join(guild):
@@ -57,40 +62,46 @@ async def on_guild_remove(guild):
     async with bot.pool.acquire() as connection:
         await connection.execute("DELETE FROM guilds WHERE id=$1", guild.id)
 
-@bot.command()
+@bot.group()
 @commands.has_permissions(administrator=True)
-async def spoiler(context, action, *args):
-    ''' Run this command for help '''
-    if action:
-        if action == 'add':
-            if args:
-                spoiler_phrase = args[0]
+async def spoiler(context):
+    ''' Run s!help for subcommands '''
+    if context.invoked_subcommand is None:
+        pass
             
-                async with bot.pool.acquire() as connection:
-                    await connection.execute('''
-                        INSERT INTO spoilers(guild_id, phrase) 
-                        VALUES($1, $2)
-                    ''', context.guild.id, spoiler_phrase)
-        elif action == 'remove':
-            if args:
-                spoiler_phrase = args[0]
-                
-                async with bot.pool.acquire() as connection:
-                    await connection.execute('''
-                        DELETE FROM spoilers 
-                        WHERE guild_id=$1 AND phrase=$2
-                    ''', context.guild.id, spoiler_phrase)
-        elif action == 'list':
-            async with bot.pool.acquire() as connection:
-                spoilers = await connection.fetch('''
-                    SELECT phrase FROM spoilers 
-                    WHERE guild_id=$1
-                ''', context.guild.id)
-                
-                spoilers_list = [record['phrase'] for record in spoilers]
-                
-                await context.send("Spoilers: {}".format(spoilers_list))
 
+@spoiler.command()
+async def add(context, spoiler, series):
+    async with bot.pool.acquire() as connection:
+        await connection.execute('''
+        INSERT INTO spoilers(guild_id, phrase, series) 
+        VALUES($1, $2, $3)
+        ''', context.guild.id, spoiler, series)
+
+    await context.send("Spoiler added: {}".format(spoiler))
+
+@spoiler.command()
+async def remove(context, spoiler):
+    async with bot.pool.acquire() as connection:
+        await connection.execute('''
+        DELETE FROM spoilers 
+        WHERE guild_id=$1 AND phrase=$2
+        ''', context.guild.id, spoiler)
+
+    await context.send("Spoiler removed: {}".format(spoiler))
+
+@spoiler.command()
+async def list(context):
+    async with bot.pool.acquire() as connection:
+        spoilers = await connection.fetch('''
+        SELECT phrase FROM spoilers 
+        WHERE guild_id=$1
+        ''', context.guild.id)
+        
+        spoilers_list = [record['phrase'] for record in spoilers]
+        
+        await context.send("Spoilers: {}".format(spoilers_list))
+        
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def addspoilerexceptions(context, spoiler_phrase, *args):
@@ -184,10 +195,10 @@ async def tag(context, *, arg=None):
 
 async def main():
     credentials = {
-        "user": os.getenv("POSTGRES_USER", "postgres"),
-        "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-        "database": os.getenv("POSTGRES_DATABASE", "postgres"),
-        "host": os.getenv("POSTGRES_HOST", "db")
+        "user": POSTGRES_USER,
+        "password": POSTGRES_PASSWORD,
+        "database": POSTGRES_DATABASE,
+        "host": POSTGRES_HOST,
     }
     
     bot.pool = await asyncpg.create_pool(**credentials)
@@ -203,6 +214,7 @@ async def main():
             id SERIAL PRIMARY KEY,
             guild_id bigint,
             phrase text,
+            series text,
             exceptions text[],
             spoiler_channels bigint[]
         )
