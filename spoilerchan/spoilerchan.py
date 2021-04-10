@@ -16,7 +16,7 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
 POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "postgres")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "db")
 
-bot = commands.Bot(command_prefix='s!')
+bot = commands.Bot(command_prefix=('s!', 'S!'))
 
 @bot.event
 async def on_ready():
@@ -176,7 +176,7 @@ async def info(context):
     await context.send("Servers: {}".format(len(guild_ids)))
 
 @bot.command()
-async def tag(context, label, *, arg=None):
+async def tag(context, *, label=None):
     ''' Spoiler tags an image or text '''
     if context.message.attachments:
         for attachment in context.message.attachments:
@@ -187,9 +187,6 @@ async def tag(context, label, *, arg=None):
             if bytes_written > 0:
                 await context.send(content="{} sent: [{}]".format(context.author.mention, label),
                                    file=discord.File(fp, filename="SPOILER_" + attachment.filename, spoiler=True))
-    else:
-        if arg:
-            await context.send("{} wrote: [{}]||{}||".format(context.author.mention, label, arg))
 
     await context.message.delete()
 
