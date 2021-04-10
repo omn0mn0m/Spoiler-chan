@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-bot = commands.Bot(command_prefix='!')
+bot = commands.Bot(command_prefix='s!')
 
 @bot.event
 async def on_ready():
@@ -20,11 +20,11 @@ async def on_ready():
 
 @bot.listen('on_message')
 async def on_message(message):
-    if message.author == bot.user:
+    if message.author == bot.user or message.author.bot:
         return
 
     warning = "Looks like a possible spoiler, {}. Please tag it if it is, or the <@&{}> will issue a warning.\n\nTag example: `[Higu Full]||Higurashi spoiler||`\n\nMessage Link: {}"
-
+    
     async with bot.pool.acquire() as connection:
         spoiler_list = await connection.fetch('SELECT phrase, exceptions, spoiler_channels FROM spoilers WHERE guild_id=$1', message.guild.id)
 
@@ -32,15 +32,20 @@ async def on_message(message):
 
     for spoiler in spoiler_list:
         if re.match(spoiler['phrase'], message.content.lower()):
+            if spoiler['spoiler_channels']:
+                if message.channel.id in spoiler['spoiler_channels']:
+                    return
+
+            mod_role = mod_role['mod_role'] if mod_role else None
+            message_text = message.content.lower()
+                
             if spoiler['exceptions']:
-                if not any(exception in message.content.lower() for exception in spoiler['exceptions']):
-                    await message.channel.send(warning.format(message.author.mention,
-                                                              mod_role,
-                                                              message.jump_url))
-            else:
-                await message.channel.send(warning.format(message.author.mention,
-                                                              mod_role['mod_role'],
-                                                              message.jump_url))
+                if any(exception in message_text for exception in spoiler['exceptions']):
+                    return
+                
+            await message.channel.send(warning.format(message.author.mention,
+                                                      mod_role,
+                                                      message.jump_url))
 
 @bot.event
 async def on_guild_join(guild):
@@ -53,59 +58,115 @@ async def on_guild_remove(guild):
         await connection.execute("DELETE FROM guilds WHERE id=$1", guild.id)
 
 @bot.command()
-async def addspoiler(context, spoiler_phrase):
-    ''' !addspoiler spoiler_phrase '''
+@commands.has_permissions(administrator=True)
+async def spoiler(context, action, *args):
+    ''' Run this command for help '''
+    if action:
+        if action == 'add':
+            if args:
+                spoiler_phrase = args[0]
+            
+                async with bot.pool.acquire() as connection:
+                    await connection.execute('''
+                        INSERT INTO spoilers(guild_id, phrase) 
+                        VALUES($1, $2)
+                    ''', context.guild.id, spoiler_phrase)
+        elif action == 'remove':
+            if args:
+                spoiler_phrase = args[0]
+                
+                async with bot.pool.acquire() as connection:
+                    await connection.execute('''
+                        DELETE FROM spoilers 
+                        WHERE guild_id=$1 AND phrase=$2
+                    ''', context.guild.id, spoiler_phrase)
+        elif action == 'list':
+            async with bot.pool.acquire() as connection:
+                spoilers = await connection.fetch('''
+                    SELECT phrase FROM spoilers 
+                    WHERE guild_id=$1
+                ''', context.guild.id)
+                
+                spoilers_list = [record['phrase'] for record in spoilers]
+                
+                await context.send("Spoilers: {}".format(spoilers_list))
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def addspoilerexceptions(context, spoiler_phrase, *args):
+    ''' Adds a list of phrases that makes the bot disregard a specific spoiler phrase '''
     if spoiler_phrase:
         async with bot.pool.acquire() as connection:
             await connection.execute('''
-                 INSERT INTO spoilers(guild_id, phrase) VALUES($1, $2)
-            ''', context.guild.id, spoiler_phrase)
+                UPDATE spoilers
+                SET exceptions=$3
+                WHERE guild_id=$1 AND phrase=$2
+            ''', context.guild.id, spoiler_phrase, args)
+
+        await context.send("Added spoiler exceptions: {}.".format(args))
 
 @bot.command()
-async def removespoiler(context, spoiler_phrase):
+@commands.has_permissions(administrator=True)
+async def clearspoilerexceptions(context, spoiler_phrase):
+    ''' Clears all exceptions from a specific phrase '''
     if spoiler_phrase:
         async with bot.pool.acquire() as connection:
-            await connection.execute("DELETE FROM spoilers WHERE guild_id=$1 AND phrase=$2", context.guild.id, spoiler_phrase)
+            await connection.execute('''
+                UPDATE spoilers
+                SET exceptions=null
+                WHERE guild_id=$1 AND phrase=$2
+            ''', context.guild.id, spoiler_phrase)
+
+        await context.send("Cleared all exceptions from {}.".format(spoiler_phrase))
 
 @bot.command()
-async def listspoilers(context):
-    async with bot.pool.acquire() as connection:
-        spoilers = await connection.fetch('SELECT phrase FROM spoilers WHERE guild_id=$1', context.guild.id)
-
-        spoilers_string = ''
+@commands.has_permissions(administrator=True)
+async def addspoilerchannels(context, spoiler_phrase, *args):
+    ''' Adds a list of spoiler channels to ignore a specific phrase in '''
+    if spoiler_phrase:
+        spoiler_channels = [int(channel_id) for channel_id in args]
         
-        for record in spoilers:
-            spoilers_string += record['phrase'] + ', '
-        
-        await context.send("Spoilers: {}".format(spoilers_string))
+        async with bot.pool.acquire() as connection:
+            await connection.execute('''
+                UPDATE spoilers
+                SET spoiler_channels=$3
+                WHERE guild_id=$1 AND phrase=$2
+            ''', context.guild.id, spoiler_phrase, spoiler_channels)
+
+        await context.send("Added spoiler channels: {}.".format(spoiler_channels))
 
 @bot.command()
-async def addspoilerexception(context, *args):
-    ''' !addspoilerexception exception1 exception2 '''
-    pass
+@commands.has_permissions(administrator=True)
+async def clearspoilerchannels(context, spoiler_phrase):
+    ''' Clears all spoiler channels to ignore a specific phrase '''
+    if spoiler_phrase:
+        async with bot.pool.acquire() as connection:
+            await connection.execute('''
+                UPDATE spoilers
+                SET spoiler_channels=null
+                WHERE guild_id=$1 AND phrase=$2
+            ''', context.guild.id, spoiler_phrase)
+
+        await context.send("Cleared all channels from {}.".format(spoiler_phrase))
 
 @bot.command()
-async def addspoilerchannel(context, *args):
-    ''' !addspoilerchannel channel1 channel2 '''
-    pass
-
-@bot.command()
+@commands.has_permissions(administrator=True)
 async def setmodrole(context, mod_role):
+    ''' Sets the server's moderator role (for pinging) '''
     async with bot.pool.acquire() as connection:
         await connection.execute("UPDATE guilds SET mod_role=$1 WHERE id=$2", int(mod_role), context.guild.id)
 
 @bot.command()
-async def servers(context):
+async def info(context):
+    ''' Displays bot info '''
     async with bot.pool.acquire() as connection:
         guild_ids = await connection.fetch("SELECT * from guilds")
 
-    if guild_ids:
-        await context.send("Servers: {}".format(guild_ids))
-    else:
-        await context.send("Servers: None")
+    await context.send("Servers: {}".format(len(guild_ids)))
 
 @bot.command()
-async def spoiler(context, *, arg=None):
+async def tag(context, *, arg=None):
+    ''' Spoiler tags an image or text '''
     if context.message.attachments:
         for attachment in context.message.attachments:
             fp = io.BytesIO()
@@ -143,7 +204,7 @@ async def main():
             guild_id bigint,
             phrase text,
             exceptions text[],
-            spoiler_channels bigint
+            spoiler_channels bigint[]
         )
     ''')
     
