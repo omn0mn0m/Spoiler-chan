@@ -35,7 +35,7 @@ async def on_message(message):
         mod_role = await connection.fetchrow('SELECT mod_role FROM guilds WHERE id=$1', message.guild.id)
 
     for spoiler in spoiler_list:
-        if re.match(spoiler['phrase'], message.content.lower()):
+        if re.search(spoiler['phrase'], message.content.lower()):
             if spoiler['spoiler_channels']:
                 if message.channel.id in spoiler['spoiler_channels']:
                     return
