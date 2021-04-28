@@ -7,5 +7,4 @@ Discord bot to handle spoilers.
 3. Run the bot using `python spoilerchan/spoilerchan.py`
 
 ## Commands
-- `!spoiler Your spoiler message here` - Tags the message as a spoiler
-- `!spoiler image_file.png` - Uploads your image as a spoiler (useful for mobile)
+- `!spoiler Tag for your spoiler` - Uploads the image attachment for the message as a spoiler (useful for mobile)
