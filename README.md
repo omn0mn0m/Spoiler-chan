@@ -14,4 +14,8 @@ DISCORD_TOKEN=<Replace this with the bot token>
 ```
 
 ## Commands
-- `!spoiler Tag for your spoiler` - Uploads the image attachment for the message as a spoiler (useful for mobile)
+### Everyone
+- `s!tag Text warning to go with your spoiler` - Uploads the image attachment for the message as a spoiler (useful for mobile)
+
+### Mods
+- `s!spoiler add Spoiler Series` - Adds a new spoiler to watch for
