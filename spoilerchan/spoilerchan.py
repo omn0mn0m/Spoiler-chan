@@ -20,6 +20,10 @@ bot = commands.Bot(command_prefix=('s!', 'S!'))
 
 @bot.event
 async def on_ready():
+    async with bot.pool.acquire() as connection:
+        for guild in bot.guilds:
+            await connection.execute("INSERT INTO guilds(id) VALUES($1) on conflict (id) do nothing", guild.id)
+
     print('We have logged in as {0.user}'.format(bot))
 
 @bot.listen('on_message')
