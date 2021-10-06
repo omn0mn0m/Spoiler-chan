@@ -1,5 +1,5 @@
 # Spoiler-chan
-Discord bot to handle spoilers.
+Discord bot to detect text spoilers and mark mobile spoilers.
 
 ## Installation
 1. Clone the repository
